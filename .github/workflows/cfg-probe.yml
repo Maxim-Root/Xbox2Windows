@@ -1,0 +1,37 @@
+# Fork-only probe for R0Y00/Xbox2Windows#1367: run cpu_native_load_config_callback on a hosted
+# windows-2025 runner and record the runner's system CFG setting. Not part of any pull request.
+name: CFG-on host probe
+on:
+  push:
+    branches: [ci/cfg-on-probe]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Runner system CFG setting
+        shell: pwsh
+        run: |
+          [Environment]::OSVersion.VersionString
+          Get-ProcessMitigation -System | Select-Object -ExpandProperty CFG | Format-List Enable, SuppressExports, StrictControlFlowGuard
+      - name: Build the load-config fixtures and run the check
+        shell: pwsh
+        run: |
+          python -m venv out/pe-env
+          .\out\pe-env\Scripts\python.exe -m pip install -r requirements-dev.txt
+          .\tools\dev.ps1
+          cmake --preset dev
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build --preset dev --target pe_map cpu_exe_io cpu_load_callback_record cpu_load_callback_other cpu_load_callback_invalid cpu_load_callback_cfg_record cpu_load_callback_cfg_invalid
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ctest --preset dev --no-tests=error -R '^cpu_native_load_config_callback$' -V --repeat until-fail:3
+          exit $LASTEXITCODE
